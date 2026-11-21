@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shorts Yapıcı</title>
+<style>
+:root{--bg:#fff;--fg:#14141a;--card:#f1f1f5;--ac:#e5173f;--mut:#666;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101015;--fg:#f2f2f6;--card:#1c1c24;--mut:#9a9aa6}}
+:root[data-theme="dark"]{--bg:#101015;--fg:#f2f2f6;--card:#1c1c24;--mut:#9a9aa6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,sans-serif;padding:16px;max-width:720px;margin:auto}
+h1{font-size:22px;margin:0 0 4px}.s{color:var(--mut);font-size:14px;margin:0 0 16px}
+.c{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-weight:600;margin-bottom:6px}
+input,textarea,button{font:inherit;color:inherit}
+textarea{width:100%;height:110px;border-radius:10px;border:1px solid #8884;background:transparent;padding:8px}
+input[type=number]{width:70px;border-radius:8px;border:1px solid #8884;background:transparent;padding:6px}
+button{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600}
+button:disabled{opacity:.5}
+video{width:100%;border-radius:10px;max-height:260px;background:#000}
+.seg{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid #8883}
+.seg small{color:var(--mut);display:block}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.out a{display:inline-block;margin-top:6px;color:var(--ac);font-weight:600}
+</style></head><body>
+<h1>🎬 Shorts Yapıcı</h1>
+<p class="s">Videoyu seç, İngilizce altyazıyı (SRT/VTT) ekle; 9:16 shorts + gömülü altyazı üretilir. Her şey cihazında çalışır, video yüklenmez.</p>
+
+<div class="c"><label>1) Video</label><input type="file" id="vf" accept="video/*"><video id="v" playsinline controls style="margin-top:10px;display:none"></video></div>
+
+<div class="c"><label>2) İngilizce altyazı (SRT/VTT)</label>
+<input type="file" id="sf" accept=".srt,.vtt,.txt"><p class="s" style="margin:8px 0">veya yapıştır:</p><textarea id="st" placeholder="1&#10;00:00:01,000 --> 00:00:04,000&#10;Hello everyone..."></textarea></div>
+
+<div class="c"><label>3) Ayarlar</label><div class="row">Süre: <input type="number" id="mn" value="25"> – <input type="number" id="mx" value="55"> sn
+<button id="go">Shorts öner</button></div></div>
+
+<div class="c" id="lc" style="display:none"><label>Öneriler</label>
+<div class="row" style="margin-bottom:8px">En iyi <input type="number" id="n" value="12"> tane <button id="hs">⚡ Puanla</button><button id="ai" style="display:none">✨ Claude seçsin</button></div><div id="list"></div>
+<div class="row" style="margin-top:10px"><button id="mk">Seçilenleri oluştur</button><span id="stat" class="s" style="margin:0"></span></div>
+<p class="s" style="margin-top:8px">Not: Kayıt gerçek zamanlı yapılır; 40 sn’lik short ≈ 40 sn sürer. Ekranı açık tut.</p></div>
+<div id="out" class="out"></div>
+<canvas id="cv" width="720" height="1280" style="display:none"></canvas>
+
+<script>
+const $=id=>document.getElementById(id),v=$('v'),cv=$('cv'),cx=cv.getContext('2d');
+let cues=[],segs=[];
+$('vf').onchange=e=>{const f=e.target.files[0];if(!f)return;v.src=URL.createObjectURL(f);v.style.display='block'};
+$('sf').onchange=async e=>{const f=e.target.files[0];if(f)$('st').value=await f.text()};
+const tt=s=>{const p=s.trim().replace(',','.').split(':').map(Number);return p.length==3?p[0]*3600+p[1]*60+p[2]:p[0]*60+p[1]};
+function parse(t){const o=[];t.replace(/\r/g,'').split(/\n\s*\n/).forEach(b=>{const l=b.split('\n'),i=l.findIndex(x=>x.includes('-->'));if(i<0)return;
+const [a,c]=l[i].split('-->');o.push({s:tt(a),e:tt(c.trim().split(' ')[0]),t:l.slice(i+1).join(' ').replace(/<[^>]+>/g,'').trim()})});return o}
+const fmt=x=>Math.floor(x/60)+':'+String(Math.floor(x%60)).padStart(2,'0');
+$('go').onclick=()=>{cues=parse($('st').value);if(!cues.length)return alert('Altyazı okunamadı.');
+const mn=+$('mn').value,mx=+$('mx').value;segs=[];let cur=null;
+for(const c of cues){if(!cur)cur={s:c.s,e:c.e,t:c.t};else{cur.e=c.e;cur.t+=' '+c.t}
+const d=cur.e-cur.s;if((d>=mn&&/[.?!]["']?$/.test(c.t))||d>=mx){segs.push(cur);cur=null}}
+if(cur&&cur.e-cur.s>=mn*.6)segs.push(cur);
+show();
+$('lc').style.display='block'};
+function show(){$('list').innerHTML=segs.map((g,i)=>`<div class="seg"><input type="checkbox" ${g.on===false?'':'checked'} data-i="${i}"><div>${fmt(g.s)}–${fmt(g.e)} (${Math.round(g.e-g.s)} sn)${g.sc!=null?' · ⭐'+g.sc:''}<small>${g.why?g.why+' — ':''}${g.t.slice(0,110)}…</small></div></div>`).join('')||'Uygun bölüm yok; süreleri değiştir.'}
+function pick(m){const n=+$('n').value||12,top=new Set(segs.map((g,i)=>i).sort((a,b)=>m[b]-m[a]).slice(0,n));segs.forEach((g,i)=>g.on=top.has(i));show()}
+const HY=/\b(insane|crazy|never|always|secret|million|billion|worst|best|win|won|lose|lost|wait|impossible|shocking|unbelievable|survive|last|only|first|free|every)\b/gi;
+function heur(g){const t=g.t,d=g.e-g.s;let s=0;s+=(t.match(/\?/g)||[]).length*2;s+=(t.match(/!/g)||[]).length*2;s+=(t.match(HY)||[]).length*1.5;s+=(t.match(/\$\s?\d|\d[\d,]*/g)||[]).length;s+=Math.min(t.split(/\s+/).length/d,4);if(/^(what|how|why|so|imagine|if|have you|do you)/i.test(t))s+=3;return Math.round(s*10)/10}
+$('hs').onclick=()=>{if(!segs.length)return;segs.forEach(g=>{g.sc=heur(g);g.why=''});pick(segs.map(g=>g.sc));$('stat').textContent='Puanlandı ✅'};
+let AI=null;
+if(window.claude)claude.use('sample').then(s=>{if(s){AI=s;$('ai').style.display=''}}).catch(()=>{});
+$('ai').onclick=async()=>{if(!segs.length)return;const n=+$('n').value||12;$('stat').textContent='Claude okuyor…';$('ai').disabled=true;
+try{const data=segs.map((g,i)=>({i,sure:Math.round(g.e-g.s),text:g.t.slice(0,900)}));
+const r=await AI.json('You pick the best YouTube Shorts from a long video transcript split into candidate segments. Choose the '+n+' best: strong hook in the first sentence, understandable without context, emotion/surprise/tension, a satisfying mini-payoff. Score 1-10. Reply ONLY JSON: {"picks":[{"i":number,"score":number,"why":"max 8 words in Turkish"}]}.\n\n'+JSON.stringify(data));
+segs.forEach(g=>{g.sc=null;g.why='';g.on=false});(r.picks||[]).slice(0,n).forEach(x=>{const g=segs[x.i];if(g){g.sc=x.score;g.why=x.why;g.on=true}});show();$('stat').textContent='Claude seçti ✅'}
+catch(e){$('stat').textContent='Claude hatası: '+(e.code||e.message)}
+$('ai').disabled=false};
+function wrap(t,w){const ws=t.split(' '),L=[];let l='';for(const x of ws){const n=l?l+' '+x:x;if(cx.measureText(n).width>w&&l){L.push(l);l=x}else l=n}if(l)L.push(l);return L}
+function draw(){const vw=v.videoWidth,vh=v.videoHeight,sw=vh*720/1280;
+cx.fillStyle='#000';cx.fillRect(0,0,720,1280);
+if(sw<=vw)cx.drawImage(v,(vw-sw)/2,0,sw,vh,0,0,720,1280);
+else{const h=720*vh/vw;cx.drawImage(v,0,(1280-h)/2,720,h)}
+const c=cues.find(c=>v.currentTime>=c.s&&v.currentTime<=c.e);
+if(c){cx.font='bold 46px system-ui,sans-serif';cx.textAlign='center';cx.lineWidth=9;cx.lineJoin='round';
+const L=wrap(c.t,640);L.forEach((l,i)=>{const y=1010-(L.length-1-i)*56;cx.strokeStyle='#000';cx.strokeText(l,360,y);cx.fillStyle='#fff';cx.fillText(l,360,y)})}}
+let ac,src,dst;
+async function render(g,n){
+if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();src=ac.createMediaElementSource(v);dst=ac.createMediaStreamDestination();src.connect(dst);src.connect(ac.destination)}
+await ac.resume();v.pause();v.currentTime=g.s;await new Promise(r=>v.addEventListener('seeked',r,{once:true}));
+const mime=['video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||'';
+const st=new MediaStream([...cv.captureStream(30).getVideoTracks(),...dst.stream.getAudioTracks()]);
+const rec=new MediaRecorder(st,mime?{mimeType:mime,videoBitsPerSecond:4e6}:{}),ch=[];
+rec.ondataavailable=e=>e.data.size&&ch.push(e.data);
+const done=new Promise(r=>rec.onstop=r);rec.start();await v.play();
+await new Promise(res=>{const f=()=>{draw();$('stat').textContent=`Short ${n}: ${Math.round(v.currentTime-g.s)}/${Math.round(g.e-g.s)} sn`;
+if(v.currentTime>=g.e||v.ended){v.pause();rec.stop();res()}else requestAnimationFrame(f)};f()});
+await done;const ext=(rec.mimeType||mime).includes('mp4')?'mp4':'webm';
+return {url:URL.createObjectURL(new Blob(ch,{type:rec.mimeType||mime})),ext}}
+$('mk').onclick=async()=>{if(!v.src)return alert('Önce video seç.');
+const sel=[...document.querySelectorAll('#list input:checked')].map(x=>+x.dataset.i);if(!sel.length)return;
+$('mk').disabled=true;
+try{for(let k=0;k<sel.length;k++){const g=segs[sel[k]],r=await render(g,k+1);
+$('out').insertAdjacentHTML('beforeend',`<div class="c"><b>Short ${k+1}</b> (${fmt(g.s)}–${fmt(g.e)})<br><video src="${r.url}" controls playsinline></video><br><a href="${r.url}" download="short-${k+1}.${r.ext}">⬇ İndir</a></div>`)}
+$('stat').textContent='Bitti ✅'}catch(e){$('stat').textContent='Hata: '+e.message}
+$('mk').disabled=false};
+</script></body></html>
